@@ -24,11 +24,23 @@ object Par {
   // in accord with our design choice of having `fork` be the sole function
   // in the API for controlling parallelism. We can always do `fork(map2(a,b)(f))`
   // if we want the evaluation of `f` to occur in a separate thread.
+  //
+  // This implementation of `map2` does _not_ respect timeouts,
+  // and eagerly waits for the returned futures. This means that even
+  // if you have passed in "forked" arguments,
+  // using this map2 on them will make them wait.
+  //
+  // It simply passes the `ExecutorService` on to both `Par` values,
+  // waits for the results of the Futures `af` and `bf`,
+  // applies `f` to them, and wraps them in a `UnitFuture`.
+  // In order to respect timeouts, we'd need a new `Future` implementation
+  // that records the amount of time spent evaluating `af`,
+  // then subtracts that time from the available time allocated for evaluating `bf`.
   def map2[A,B,C](a: Par[A], b: Par[B])(f: (A,B) => C): Par[C] =
   (es: ExecutorService) => {
     val af = a(es)
     val bf = b(es)
-    UnitFuture(f(af.get, bf.get)) // This implementation of `map2` does _not_ respect timeouts, and eagerly waits for the returned futures. This means that even if you have passed in "forked" arguments, using this map2 on them will make them wait. It simply passes the `ExecutorService` on to both `Par` values, waits for the results of the Futures `af` and `bf`, applies `f` to them, and wraps them in a `UnitFuture`. In order to respect timeouts, we'd need a new `Future` implementation that records the amount of time spent evaluating `af`, then subtracts that time from the available time allocated for evaluating `bf`.
+    UnitFuture(f(af.get, bf.get))
   }
 
   def sum(ints: IndexedSeq[Int]): Par[Int] = {
