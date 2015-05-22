@@ -1,7 +1,6 @@
 package fpscala
 
-package object Example {
-}
+package object Example {}
 
 sealed trait List[+A] // `List` data type, parameterized on a type, `A`
 case object Nil extends List[Nothing] // A `List` data constructor representing the empty list
