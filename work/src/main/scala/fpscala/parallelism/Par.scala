@@ -2,7 +2,28 @@ package fpscala.parallelism
 
 import java.util.concurrent._
 
+// class ExecutorService {
+//   def submit[A](a: Callable[A]): Future[A]
+// }
+//
+// trait Callable[A] { def call: A }
+//
+// trait Future[A] {
+//   def get: A
+//   def get(timeout: Long, unit: TimeUnit): A
+//   def cancel(evenIfRunning: Boolean): Boolean
+//   def isDone: Boolean
+//   def isCancelled: Boolean
+// }
+
 object Par {
+  // defer decision of how long to wait for a computation
+  // or whether to cancel it to the caller of run.
+  //
+  // The creation of the Future doesn't happen until
+  // the ExecutorService is provided since Par is a
+  // function that takes an ExecutorService; exploiting
+  // strictness to get an implict thunk?
   type Par[A] = ExecutorService => Future[A]
 
   def run[A](s: ExecutorService)(a: Par[A]): Future[A] = a(s)
@@ -33,29 +54,38 @@ object Par {
   // It simply passes the `ExecutorService` on to both `Par` values,
   // waits for the results of the Futures `af` and `bf`,
   // applies `f` to them, and wraps them in a `UnitFuture`.
+  //
   // In order to respect timeouts, we'd need a new `Future` implementation
   // that records the amount of time spent evaluating `af`,
   // then subtracts that time from the available time allocated for evaluating `bf`.
+  //
+  // Question: what is happening here?
+  // The map2 implemented here doesn't respect timeouts because it returns a unitFuture which
+  // ignores the timeout argument in it's get function.
   def map2[A,B,C](a: Par[A], b: Par[B])(f: (A,B) => C): Par[C] =
-  (es: ExecutorService) => {
-    val af = a(es)
-    val bf = b(es)
-    UnitFuture(f(af.get, bf.get))
-  }
-
-  def sum(ints: IndexedSeq[Int]): Par[Int] = {
-    if (ints.size <= 1) {
-      Par.unit(ints.headOption getOrElse 0)
-    } else {
-      val (l,r) = ints.splitAt(ints.length/2)
-      Par.map2(sum(l), sum(r))(_ + _)
+    (es: ExecutorService) => {
+      val af = a(es)
+      val bf = b(es)
+      UnitFuture(f(af.get, bf.get))
     }
-  }
 
-  def fork[A](a: => Par[A]): Par[A] = // This is the simplest and most natural implementation of `fork`, but there are some problems with it--for one, the outer `Callable` will block waiting for the "inner" task to complete. Since this blocking occupies a thread in our thread pool, or whatever resource backs the `ExecutorService`, this implies that we're losing out on some potential parallelism. Essentially, we're using two threads when one should suffice. This is a symptom of a more serious problem with the implementation, and we will discuss this later in the chapter.
-  es => es.submit(new Callable[A] {
-      def call = a(es).get
-    })
+  // This is the simplest and most natural implementation of `fork`,
+  // but there are some problems with it--for one, the outer `Callable`
+  // will block waiting for the "inner" task to complete.
+  // Since this blocking occupies a thread in our thread pool,
+  // or whatever resource backs the `ExecutorService`,
+  // this implies that we're losing out on some potential parallelism.
+  // Essentially, we're using two threads when one should suffice.
+  // This is a symptom of a more serious problem with the implementation,
+  // and we will discuss this later in the chapter.
+  def fork[A](a: => Par[A]): Par[A] =
+    es => es.submit(new Callable[A] {
+        def call = a(es).get
+      })
+
+  def lazyUnit[A](a: => A): Par[A] = {
+    fork(unit(a))
+  }
 
   def map[A,B](pa: Par[A])(f: A => B): Par[B] =
     map2(pa, unit(()))((a,_) => f(a))
@@ -70,15 +100,13 @@ object Par {
 
   def choice[A](cond: Par[Boolean])(t: Par[A], f: Par[A]): Par[A] =
     es =>
-  if (run(es)(cond).get) t(es) // Notice we are blocking on the result of `cond`.
-  else f(es)
+      if (run(es)(cond).get) t(es) // Notice we are blocking on the result of `cond`.
+      else f(es)
 
   /* Gives us infix syntax for `Par`. */
   implicit def toParOps[A](p: Par[A]): ParOps[A] = new ParOps(p)
 
   class ParOps[A](p: Par[A]) {
-
-
   }
 }
 
@@ -91,5 +119,15 @@ object Examples {
     val (l,r) = ints.splitAt(ints.length/2) // Divide the sequence in half using the `splitAt` function.
     sum(l) + sum(r) // Recursively sum both halves and add the results together.
   }
+
+  def sum2(ints: IndexedSeq[Int]): Par[Int] = {
+    if (ints.size <= 1) {
+      Par.unit(ints.headOption getOrElse 0)
+    } else {
+      val (l,r) = ints.splitAt(ints.length/2)
+      Par.map2(sum(l), sum(r))(_ + _)
+    }
+  }
+
 
 }

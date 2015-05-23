@@ -1,5 +1,6 @@
 # Ch.7 Purely Functional Parallelism
 
+
 ## General NOTES:
 - Design a purely functional library with an API described by an algebra that
   obeys specific laws and admits no side effects
@@ -37,5 +38,8 @@
 - p.101-102: How do you keep map2 strict but not have it begin execution
   immediately? How do make descriptions more lightweight?
   * map2 is lazy evaluated
--
--
+
+
+## MISC
+- Good primer on Java/Scala concurrency --
+  http://www.ibm.com/developerworks/library/j-jvmc1/index.html
